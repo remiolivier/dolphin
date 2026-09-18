@@ -10,6 +10,7 @@ namespace ControllerEmu
 class EmulatedController;
 }
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -17,6 +18,20 @@ namespace InputProfile
 {
 std::vector<std::string> GetProfilesFromSetting(const std::string& setting,
                                                 const std::string& root);
+
+std::vector<std::string> GetUserProfiles(const InputConfig* input_config);
+std::optional<std::string> GetProfileDevice(const std::string& profile_path);
+bool IsDefaultProfile(const std::string& profile_path);
+bool RemoveDefaultProfile(const std::string& profile_path);
+bool SetDefaultProfile(InputConfig* input_config, const std::string& profile_path, bool enabled);
+bool HasDefaultProfileForDevice(const InputConfig* input_config, const std::string& device,
+                                const std::string& excluded_profile_path = {});
+bool ApplyDefaultProfile(InputConfig* input_config, ControllerEmu::EmulatedController* controller,
+                         const std::string& device);
+void ApplyDefaultProfiles(InputConfig* input_config);
+bool HasControllerMappings(const ControllerEmu::EmulatedController* controller);
+bool LoadProfile(ControllerEmu::EmulatedController* controller, InputConfig* input_config,
+                 const std::string& profile_path, bool replace_existing);
 
 enum class CycleDirection : int
 {

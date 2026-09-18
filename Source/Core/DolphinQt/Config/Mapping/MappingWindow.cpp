@@ -64,6 +64,7 @@
 #include "InputCommon/ControllerInterface/ControllerInterface.h"
 #include "InputCommon/ControllerInterface/CoreDevice.h"
 #include "InputCommon/InputConfig.h"
+#include "InputCommon/InputProfile.h"
 
 MappingWindow::MappingWindow(QWidget* parent, Type type, int port_num)
     : QDialog(parent), m_port(port_num)
@@ -306,6 +307,7 @@ void MappingWindow::OnDeleteProfilePressed()
   m_profiles_combo->removeItem(m_profiles_combo->currentIndex());
   m_profiles_combo->setCurrentIndex(-1);
 
+  InputProfile::RemoveDefaultProfile(profile_path.toStdString());
   File::Delete(profile_path.toStdString());
 
   ModalMessageBox result(this);
@@ -331,12 +333,29 @@ void MappingWindow::OnLoadProfilePressed()
 
   const QString profile_path = m_profiles_combo->currentData().toString();
 
-  Common::IniFile ini;
-  ini.Load(profile_path.toStdString());
+  bool replace_existing = true;
+  if (InputProfile::HasControllerMappings(m_controller))
+  {
+    ModalMessageBox choice(this);
+    choice.setIcon(QMessageBox::Question);
+    choice.setWindowTitle(tr("Load Profile"));
+    choice.setText(tr("This controller already has mappings."));
+    choice.setInformativeText(
+        tr("Replace the existing mappings, or keep them and apply this profile on top?"));
+    auto* replace_button = choice.addButton(tr("Replace Mappings"), QMessageBox::AcceptRole);
+    auto* keep_button = choice.addButton(tr("Keep Existing"), QMessageBox::ActionRole);
+    choice.addButton(QMessageBox::Cancel);
+    choice.exec();
 
-  m_controller->LoadConfig(ini.GetOrCreateSection("Profile"));
-  m_controller->UpdateReferences(g_controller_interface);
-  m_controller->GetConfig()->GenerateControllerTextures();
+    if (choice.clickedButton() == keep_button)
+      replace_existing = false;
+    else if (choice.clickedButton() != replace_button)
+      return;
+  }
+
+  if (!InputProfile::LoadProfile(m_controller, m_config, profile_path.toStdString(),
+                                 replace_existing))
+    return;
 
   const auto lock = GetController()->GetStateLock();
   emit ConfigChanged();
@@ -359,6 +378,9 @@ void MappingWindow::OnSaveProfilePressed()
   m_controller->SaveConfig(ini.GetOrCreateSection("Profile"));
   ini.Save(profile_path);
 
+  if (InputProfile::IsDefaultProfile(profile_path))
+    InputProfile::SetDefaultProfile(m_config, profile_path, true);
+
   if (m_profiles_combo->findText(profile_name) == -1)
   {
     PopulateProfileSelection();
@@ -379,10 +401,13 @@ void MappingWindow::OnSelectDevice(int)
   // Original string is stored in the "user-data".
   const auto device = m_devices_combo->currentData().toString().toStdString();
 
-  m_controller->SetDefaultDevice(device);
+  if (!InputProfile::ApplyDefaultProfile(m_config, m_controller, device))
+  {
+    m_controller->SetDefaultDevice(device);
+    m_controller->UpdateReferences(g_controller_interface);
+  }
 
   emit ConfigChanged();
-  m_controller->UpdateReferences(g_controller_interface);
 }
 
 bool MappingWindow::IsCreateOtherDeviceMappingsEnabled() const

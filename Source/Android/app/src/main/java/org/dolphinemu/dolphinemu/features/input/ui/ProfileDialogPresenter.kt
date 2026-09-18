@@ -9,9 +9,9 @@ import androidx.fragment.app.DialogFragment
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import org.dolphinemu.dolphinemu.R
 import org.dolphinemu.dolphinemu.databinding.DialogInputStringBinding
+import org.dolphinemu.dolphinemu.features.input.model.DefaultProfileManager
 import org.dolphinemu.dolphinemu.features.settings.ui.MenuTag
 import org.dolphinemu.dolphinemu.features.settings.ui.SettingsActivityView
-import org.dolphinemu.dolphinemu.utils.DirectoryInitialization
 import java.io.File
 import java.util.Locale
 
@@ -43,22 +43,33 @@ class ProfileDialogPresenter {
     }
 
     fun loadProfile(profileName: String, stock: Boolean) {
+        val controller = menuTag.correspondingEmulatedController
+        val profilePath = getProfilePath(profileName, stock)
+
+        if (!controller.hasMappings()) {
+            controller.loadProfile(profilePath, true)
+            (dialog!!.requireActivity() as SettingsActivityView).onControllerSettingsChanged()
+            dialog.dismiss()
+            return
+        }
+
         MaterialAlertDialogBuilder(context!!)
-            .setMessage(context.getString(R.string.input_profile_confirm_load, profileName))
-            .setPositiveButton(R.string.yes) { _: DialogInterface?, _: Int ->
-                menuTag.correspondingEmulatedController
-                    .loadProfile(getProfilePath(profileName, stock))
+            .setMessage(context.getString(R.string.input_profile_existing_mappings, profileName))
+            .setPositiveButton(R.string.input_profile_replace_mappings) { _, _ ->
+                controller.loadProfile(profilePath, true)
                 (dialog!!.requireActivity() as SettingsActivityView).onControllerSettingsChanged()
                 dialog.dismiss()
             }
-            .setNegativeButton(R.string.no, null)
+            .setNeutralButton(R.string.input_profile_keep_existing) { _, _ ->
+                controller.loadProfile(profilePath, false)
+                (dialog!!.requireActivity() as SettingsActivityView).onControllerSettingsChanged()
+                dialog.dismiss()
+            }
+            .setNegativeButton(android.R.string.cancel, null)
             .show()
     }
 
     fun saveProfile(profileName: String) {
-        // If the user is saving over an existing profile, we should show an overwrite warning.
-        // If the user is creating a new profile, we normally shouldn't show a warning,
-        // but if they've entered the name of an existing profile, we should shown an overwrite warning.
         val profilePath = getProfilePath(profileName, false)
         if (!File(profilePath).exists()) {
             menuTag.correspondingEmulatedController.saveProfile(profilePath)
@@ -93,7 +104,9 @@ class ProfileDialogPresenter {
         MaterialAlertDialogBuilder(context!!)
             .setMessage(context.getString(R.string.input_profile_confirm_delete, profileName))
             .setPositiveButton(R.string.yes) { _: DialogInterface?, _: Int ->
-                File(getProfilePath(profileName, false)).delete()
+                val profilePath = getProfilePath(profileName, false)
+                DefaultProfileManager.removeDefaultProfile(profilePath)
+                File(profilePath).delete()
                 dialog!!.dismiss()
             }
             .setNegativeButton(R.string.no, null)

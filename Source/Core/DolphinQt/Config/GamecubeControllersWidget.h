@@ -39,5 +39,6 @@ private:
   QGridLayout* m_gc_layout;
   std::array<QComboBox*, 4> m_gc_controller_boxes;
   std::array<QPushButton*, 4> m_gc_buttons;
+  QPushButton* m_default_profiles_button;
   std::array<QHBoxLayout*, 4> m_gc_groups;
 };

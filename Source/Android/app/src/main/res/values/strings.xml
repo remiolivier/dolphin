@@ -42,6 +42,9 @@
     <string name="input_profile_save">Save</string>
     <string name="input_profile_delete">Delete</string>
     <string name="input_profile_confirm_load">Do you want to discard your current controller settings and load the profile \"%1$s\"?</string>
+    <string name="input_profile_existing_mappings">This controller already has mappings. Replace them before loading \"%1$s\", or keep them and apply the profile on top?</string>
+    <string name="input_profile_replace_mappings">Replace mappings</string>
+    <string name="input_profile_keep_existing">Keep existing</string>
     <string name="input_profile_confirm_save">Do you want to overwrite the profile \"%1$s\"?</string>
     <string name="input_profile_confirm_delete">Do you want to delete the profile \"%1$s\"?</string>
     <string name="input_reset_to_default">Default</string>
@@ -1062,4 +1065,7 @@ It can efficiently compress both junk data and encrypted Wii data.
     <string name="netplay_address_share">Share address</string>
     <string name="netplay_address_retry">Retry</string>
     <string name="netplay_transfer_progress">%1$s/%2$s MiB</string>
+    <string name="input_default_profiles">Default Profiles</string>
+    <string name="input_default_profile_mapping">%1$s — %2$s</string>
+    <string name="input_default_profile_configure_first">No controller profiles found. Configure a controller and save a profile first. It will then appear here.</string>
 </resources>

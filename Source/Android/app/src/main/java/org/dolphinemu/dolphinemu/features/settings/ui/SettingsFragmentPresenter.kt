@@ -21,6 +21,7 @@ import kotlinx.coroutines.withContext
 import org.dolphinemu.dolphinemu.NativeLibrary
 import org.dolphinemu.dolphinemu.R
 import org.dolphinemu.dolphinemu.activities.UserDataActivity
+import org.dolphinemu.dolphinemu.features.input.model.DefaultProfileManager
 import org.dolphinemu.dolphinemu.features.input.model.ControlGroupEnabledSetting
 import org.dolphinemu.dolphinemu.features.input.model.InputMappingBooleanSetting
 import org.dolphinemu.dolphinemu.features.input.model.InputMappingDoubleSetting
@@ -31,6 +32,7 @@ import org.dolphinemu.dolphinemu.features.input.model.controlleremu.EmulatedCont
 import org.dolphinemu.dolphinemu.features.input.model.controlleremu.NumericSetting
 import org.dolphinemu.dolphinemu.features.input.model.view.InputDeviceSetting
 import org.dolphinemu.dolphinemu.features.input.model.view.InputMappingControlSetting
+import org.dolphinemu.dolphinemu.features.input.ui.DefaultProfileDialog
 import org.dolphinemu.dolphinemu.features.input.ui.ProfileDialog
 import org.dolphinemu.dolphinemu.features.input.ui.ProfileDialogPresenter
 import org.dolphinemu.dolphinemu.features.settings.model.AbstractBooleanSetting
@@ -1458,6 +1460,13 @@ class SettingsFragmentPresenter(
 
     private fun addGcPadSettings(sl: ArrayList<SettingsItem>) {
         sl.add(
+            RunRunnable(
+                context, R.string.input_default_profiles, 0, 0, 0, true
+            ) { fragmentView.showDialogFragment(
+                DefaultProfileDialog.create(DefaultProfileManager.ControllerFamily.GAMECUBE)
+            ) }
+        )
+        sl.add(
             SingleChoiceSetting(
                 context,
                 IntSetting.MAIN_SI_DEVICE_0,
@@ -1504,6 +1513,15 @@ class SettingsFragmentPresenter(
     }
 
     private fun addWiimoteSettings(sl: ArrayList<SettingsItem>) {
+        sl.add(
+            RunRunnable(
+                context, R.string.input_default_profiles, 0, 0, 0, true
+            ) {
+                fragmentView.showDialogFragment(
+                    DefaultProfileDialog.create(DefaultProfileManager.ControllerFamily.WIIMOTE)
+                )
+            }
+        )
         sl.add(
             SingleChoiceSetting(
                 context,
@@ -2689,8 +2707,17 @@ class SettingsFragmentPresenter(
     ) {
         sl.add(
             InputDeviceSetting(
-                context, R.string.input_device, 0, controller
-            )
+                context, R.string.input_device, 0, controller,
+                if (menuTag == MenuTag.WIIMOTE_1 ||
+                    menuTag == MenuTag.WIIMOTE_2 ||
+                    menuTag == MenuTag.WIIMOTE_3 ||
+                    menuTag == MenuTag.WIIMOTE_4
+                ) {
+                    DefaultProfileManager.ControllerFamily.WIIMOTE
+                } else {
+                    DefaultProfileManager.ControllerFamily.GAMECUBE
+                }
+            ) { fragmentView.onControllerSettingsChanged() }
         )
 
         sl.add(SwitchSetting(context, object : AbstractBooleanSetting {

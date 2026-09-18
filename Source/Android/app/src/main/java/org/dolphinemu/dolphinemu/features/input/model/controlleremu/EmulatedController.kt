@@ -35,7 +35,9 @@ class EmulatedController private constructor(private val pointer: Long) : Contro
 
     external fun clearSettings()
 
-    external fun loadProfile(path: String)
+    external fun hasMappings(): Boolean
+
+    external fun loadProfile(path: String, replaceExisting: Boolean)
 
     external fun saveProfile(path: String)
 

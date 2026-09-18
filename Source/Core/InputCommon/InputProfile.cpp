@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <iterator>
+#include <optional>
+#include <string_view>
 
 #include <fmt/format.h>
 
@@ -25,6 +27,220 @@ namespace InputProfile
 namespace
 {
 constexpr int display_message_ms = 3000;
+constexpr std::string_view default_profile_extension = ".auto";
+
+std::string GetDeviceIdentity(const std::string& device)
+{
+  ciface::Core::DeviceQualifier qualifier;
+  qualifier.FromString(device);
+  qualifier.cid = -1;
+  return qualifier.ToString();
+}
+
+std::string GetDefaultProfileMarkerPath(const std::string& profile_path)
+{
+  return profile_path + std::string(default_profile_extension);
+}
+
+std::optional<std::string> ReadDefaultProfileIdentity(const std::string& profile_path)
+{
+  if (!File::Exists(GetDefaultProfileMarkerPath(profile_path)))
+    return std::nullopt;
+
+  const auto device = GetProfileDevice(profile_path);
+  if (!device)
+    return std::nullopt;
+  return GetDeviceIdentity(*device);
+}
+
+bool LoadProfileForDevice(const std::string& profile_path,
+                          ControllerEmu::EmulatedController* controller, InputConfig* input_config,
+                          const std::string& device)
+{
+  if (!LoadProfile(controller, input_config, profile_path, true))
+    return false;
+
+  controller->SetDefaultDevice(device);
+  controller->UpdateReferences(g_controller_interface);
+  return true;
+}
+}  // namespace
+
+std::vector<std::string> GetUserProfiles(const InputConfig* input_config)
+{
+  return Common::DoFileSearch(input_config->GetUserProfileDirectoryPath(), ".ini", false);
+}
+
+std::optional<std::string> GetProfileDevice(const std::string& profile_path)
+{
+  Common::IniFile ini_file;
+  if (!ini_file.Load(profile_path))
+    return std::nullopt;
+
+  std::string device;
+  if (!ini_file.GetOrCreateSection("Profile")->Get("Device", &device) || device.empty())
+    return std::nullopt;
+
+  return device;
+}
+
+bool IsDefaultProfile(const std::string& profile_path)
+{
+  return File::Exists(GetDefaultProfileMarkerPath(profile_path));
+}
+
+bool RemoveDefaultProfile(const std::string& profile_path)
+{
+  const std::string marker_path = GetDefaultProfileMarkerPath(profile_path);
+  return !File::Exists(marker_path) ||
+         File::Delete(marker_path, File::IfAbsentBehavior::NoConsoleWarning);
+}
+
+bool SetDefaultProfile(InputConfig* input_config, const std::string& profile_path, bool enabled)
+{
+  if (!enabled)
+    return RemoveDefaultProfile(profile_path);
+
+  const auto device = GetProfileDevice(profile_path);
+  if (!device)
+    return false;
+
+  const std::string identity = GetDeviceIdentity(*device);
+  if (identity.empty())
+    return false;
+
+  for (const std::string& other_profile : GetUserProfiles(input_config))
+  {
+    if (other_profile == profile_path || !IsDefaultProfile(other_profile))
+      continue;
+
+    const auto other_device = GetProfileDevice(other_profile);
+    if (other_device && GetDeviceIdentity(*other_device) == identity)
+      File::Delete(GetDefaultProfileMarkerPath(other_profile),
+                   File::IfAbsentBehavior::NoConsoleWarning);
+  }
+
+  return File::WriteStringToFile(GetDefaultProfileMarkerPath(profile_path), identity);
+}
+
+bool HasDefaultProfileForDevice(const InputConfig* input_config, const std::string& device,
+                                const std::string& excluded_profile_path)
+{
+  const std::string identity = GetDeviceIdentity(device);
+  return std::ranges::any_of(GetUserProfiles(input_config), [&](const std::string& profile) {
+    if (profile == excluded_profile_path || !IsDefaultProfile(profile))
+      return false;
+
+    const auto profile_device = GetProfileDevice(profile);
+    return profile_device && GetDeviceIdentity(*profile_device) == identity;
+  });
+}
+
+bool ApplyDefaultProfile(InputConfig* input_config, ControllerEmu::EmulatedController* controller,
+                         const std::string& device)
+{
+  const std::string identity = GetDeviceIdentity(device);
+  const auto profiles = GetUserProfiles(input_config);
+  const auto profile = std::ranges::find_if(profiles, [&](const std::string& candidate) {
+    const auto default_identity = ReadDefaultProfileIdentity(candidate);
+    return default_identity && *default_identity == identity;
+  });
+
+  return profile != profiles.end() &&
+         LoadProfileForDevice(*profile, controller, input_config, device);
+}
+
+void ApplyDefaultProfiles(InputConfig* input_config)
+{
+  const auto devices = g_controller_interface.GetAllDevices();
+  std::vector<bool> claimed_devices(devices.size());
+  std::vector<bool> matched_controllers(input_config->GetControllerCount());
+
+  const auto apply_device = [&](int controller_index, size_t device_index) {
+    auto* controller = input_config->GetController(controller_index);
+    ciface::Core::DeviceQualifier connected;
+    connected.FromDevice(devices[device_index].get());
+    ApplyDefaultProfile(input_config, controller, connected.ToString());
+    claimed_devices[device_index] = true;
+    matched_controllers[controller_index] = true;
+  };
+
+  // Preserve exact device assignments first so identical controllers stay in their current slots.
+  for (int controller_index = 0; controller_index < input_config->GetControllerCount();
+       ++controller_index)
+  {
+    if (!input_config->IsControllerControlledByGamepadDevice(controller_index) ||
+        HasControllerMappings(input_config->GetController(controller_index)))
+      continue;
+
+    const auto& configured = input_config->GetController(controller_index)->GetDefaultDevice();
+    for (size_t device_index = 0; device_index < devices.size(); ++device_index)
+    {
+      if (!claimed_devices[device_index] && configured == devices[device_index].get())
+      {
+        apply_device(controller_index, device_index);
+        break;
+      }
+    }
+  }
+
+  // If a backend changed a device ID after reconnecting, match the same source and device name.
+  for (int controller_index = 0; controller_index < input_config->GetControllerCount();
+       ++controller_index)
+  {
+    if (matched_controllers[controller_index] ||
+        !input_config->IsControllerControlledByGamepadDevice(controller_index) ||
+        HasControllerMappings(input_config->GetController(controller_index)))
+    {
+      continue;
+    }
+
+    const auto& configured = input_config->GetController(controller_index)->GetDefaultDevice();
+    for (size_t device_index = 0; device_index < devices.size(); ++device_index)
+    {
+      if (!claimed_devices[device_index] && devices[device_index]->GetSource() == configured.source &&
+          devices[device_index]->GetName() == configured.name)
+      {
+        apply_device(controller_index, device_index);
+        break;
+      }
+    }
+  }
+}
+
+bool HasControllerMappings(const ControllerEmu::EmulatedController* controller)
+{
+  Common::IniFile::Section section;
+  const_cast<ControllerEmu::EmulatedController*>(controller)->SaveConfig(&section);
+  return std::ranges::any_of(section.GetValues(), [](const auto& entry) {
+    return entry.first != "Device" && !entry.second.empty();
+  });
+}
+
+bool LoadProfile(ControllerEmu::EmulatedController* controller, InputConfig* input_config,
+                 const std::string& profile_path, bool replace_existing)
+{
+  Common::IniFile profile_ini;
+  if (!profile_ini.Load(profile_path))
+    return false;
+
+  auto* profile = profile_ini.GetOrCreateSection("Profile");
+  if (replace_existing)
+  {
+    controller->LoadConfig(profile);
+  }
+  else
+  {
+    Common::IniFile::Section merged;
+    controller->SaveConfig(&merged);
+    for (const auto& [key, value] : profile->GetValues())
+      merged.Set(key, value);
+    controller->LoadConfig(&merged);
+  }
+
+  controller->UpdateReferences(g_controller_interface);
+  input_config->GenerateControllerTextures(profile_ini);
+  return true;
 }
 
 std::vector<std::string> GetProfilesFromSetting(const std::string& setting, const std::string& root)

@@ -94,6 +94,8 @@ add_executable(dolphin-emu
   Config/ControllerInterface/ServerStringValidator.h
   Config/ControllersPane.cpp
   Config/ControllersPane.h
+  Config/DefaultProfileDialog.cpp
+  Config/DefaultProfileDialog.h
   Config/FilesystemWidget.cpp
   Config/FilesystemWidget.h
   Config/FreeLookWidget.cpp

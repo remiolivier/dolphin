@@ -1,0 +1,101 @@
+name: Linux Flatpak Debug Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - android-auto-controller-profiles
+
+concurrency:
+  group: linux-flatpak-debug-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Install Flatpak tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+
+      - name: Add Flathub
+        run: |
+          flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+
+      - name: Install Flatpak SDK
+        run: |
+          flatpak install --user -y flathub org.kde.Platform//6.11 org.kde.Sdk//6.11
+
+      - name: Create debug Flatpak manifest
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          source = Path("Flatpak/org.DolphinEmu.dolphin-emu.yml")
+          target = Path("Flatpak/org.DolphinEmu.dolphin-emu-debug.yml")
+
+          manifest = source.read_text()
+          manifest = manifest.replace(
+              "app-id: org.DolphinEmu.dolphin-emu",
+              "app-id: org.DolphinEmu.dolphin-emu-debug",
+              1,
+          )
+          manifest = manifest.replace(
+              "rename-desktop-file: dolphin-emu.desktop",
+              "rename-desktop-file: dolphin-emu.desktop\nrename-appdata-file: org.DolphinEmu.dolphin-emu.metainfo.xml",
+              1,
+          )
+          manifest = manifest.replace(
+              """      - type: archive
+                url: https://www.freedesktop.org/software/libevdev/libevdev-1.13.6.tar.xz
+                sha256: 73f215eccbd8233f414737ac06bca2687e67c44b97d2d7576091aa9718551110""",
+              """      - type: archive
+                url: https://gitlab.freedesktop.org/libevdev/libevdev/-/archive/libevdev-1.13.6/libevdev-libevdev-1.13.6.tar.gz
+                sha256: 54748fded25633399a8418d7c4c123fe365037c901b4389e0bf3dd7688fb1c7e""",
+              1,
+          )
+          manifest = manifest.replace(
+              "- -DCMAKE_BUILD_TYPE=Release",
+              "- -DCMAKE_BUILD_TYPE=Debug",
+              1,
+          )
+          manifest = manifest.replace(
+              "- -DENABLE_EVDEV=ON",
+              "- -DENABLE_EVDEV=ON\n      - -DLIBEVDEV_PATH_INCLUDES=/app/include/libevdev-1.0\n      - -DLIBEVDEV_PATH_LIB=/app/lib64",
+              1,
+          )
+          manifest = manifest.replace(
+              "- -DDISTRIBUTOR=dolphin-emu.org",
+              "- -DDISTRIBUTOR=DefaultProfileDebug",
+              1,
+          )
+          target.write_text(manifest)
+          PY
+
+      - name: Build debug Flatpak
+        run: |
+          flatpak-builder             --user             --force-clean             --repo=flatpak-repo             --install-deps-from=flathub             flatpak-build             Flatpak/org.DolphinEmu.dolphin-emu-debug.yml
+
+      - name: Create Flatpak bundle
+        run: |
+          flatpak build-bundle             flatpak-repo             dolphin-default-profiles-debug.flatpak             org.DolphinEmu.dolphin-emu-debug
+
+      - name: Upload debug Flatpak
+        uses: actions/upload-artifact@v4
+        with:
+          name: dolphin-linux-flatpak-debug
+          path: dolphin-default-profiles-debug.flatpak
+          if-no-files-found: error
+          retention-days: 14

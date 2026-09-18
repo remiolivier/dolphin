@@ -34,6 +34,7 @@
 #include "Core/USBUtils.h"
 #include "Core/WiiUtils.h"
 
+#include "DolphinQt/Config/DefaultProfileDialog.h"
 #include "DolphinQt/Config/Mapping/MappingWindow.h"
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
 #include "DolphinQt/QtUtils/NonDefaultQPushButton.h"
@@ -265,6 +266,9 @@ void WiimoteControllersWidget::CreateLayout()
     m_wiimote_layout->addWidget(wm_button, wm_row, 3);
   }
 
+  m_default_profiles_button = new NonDefaultQPushButton(tr("Default Profiles"));
+  m_wiimote_layout->addWidget(m_default_profiles_button, m_wiimote_layout->rowCount(), 3);
+
   m_wiimote_layout->addWidget(m_wiimote_real_balance_board, m_wiimote_layout->rowCount(), 1, 1, -1);
   m_wiimote_layout->addWidget(m_wiimote_speaker_data, m_wiimote_layout->rowCount(), 1, 1, -1);
 
@@ -289,6 +293,10 @@ void WiimoteControllersWidget::CreateLayout()
 
 void WiimoteControllersWidget::ConnectWidgets()
 {
+  connect(m_default_profiles_button, &QPushButton::clicked, this, [this] {
+    DefaultProfileDialog dialog(Wiimote::GetConfig(), this);
+    dialog.exec();
+  });
   connect(m_wiimote_passthrough, &QRadioButton::toggled, this, [this] {
     SaveSettings();
     LoadSettings(Core::GetState(Core::System::GetInstance()));

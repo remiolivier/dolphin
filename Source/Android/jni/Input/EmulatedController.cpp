@@ -13,6 +13,7 @@
 #include "InputCommon/ControllerEmu/ControllerEmu.h"
 #include "InputCommon/ControllerInterface/ControllerInterface.h"
 #include "InputCommon/InputConfig.h"
+#include "InputCommon/InputProfile.h"
 #include "jni/AndroidCommon/AndroidCommon.h"
 #include "jni/AndroidCommon/IDCache.h"
 #include "jni/Input/Control.h"
@@ -53,7 +54,85 @@ static jobject EmulatedControllerToJava(JNIEnv* env, ControllerEmu::EmulatedCont
                         reinterpret_cast<jlong>(controller));
 }
 
+static InputConfig* GetDefaultProfileInputConfig(jint family)
+{
+  return family == 0 ? Pad::GetConfig() : Wiimote::GetConfig();
+}
+
+static jobjectArray ToJStringArray(JNIEnv* env, const std::vector<std::string>& strings)
+{
+  jclass string_class = env->FindClass("java/lang/String");
+  jobjectArray result =
+      env->NewObjectArray(static_cast<jsize>(strings.size()), string_class, nullptr);
+  for (jsize i = 0; i < static_cast<jsize>(strings.size()); ++i)
+    env->SetObjectArrayElement(result, i, ToJString(env, strings[i]));
+  env->DeleteLocalRef(string_class);
+  return result;
+}
+
 extern "C" {
+
+JNIEXPORT jobjectArray JNICALL
+Java_org_dolphinemu_dolphinemu_features_input_model_DefaultProfileManager_getProfilePathsNative(
+    JNIEnv* env, jobject, jint family)
+{
+  return ToJStringArray(env, InputProfile::GetUserProfiles(GetDefaultProfileInputConfig(family)));
+}
+
+JNIEXPORT jstring JNICALL
+Java_org_dolphinemu_dolphinemu_features_input_model_DefaultProfileManager_getProfileDeviceNative(
+    JNIEnv* env, jobject, jstring j_profile_path)
+{
+  const auto device = InputProfile::GetProfileDevice(GetJString(env, j_profile_path));
+  return device ? ToJString(env, *device) : nullptr;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_org_dolphinemu_dolphinemu_features_input_model_DefaultProfileManager_isDefaultProfileNative(
+    JNIEnv* env, jobject, jstring j_profile_path)
+{
+  return InputProfile::IsDefaultProfile(GetJString(env, j_profile_path));
+}
+
+JNIEXPORT jboolean JNICALL
+Java_org_dolphinemu_dolphinemu_features_input_model_DefaultProfileManager_removeDefaultProfileNative(
+    JNIEnv* env, jobject, jstring j_profile_path)
+{
+  return InputProfile::RemoveDefaultProfile(GetJString(env, j_profile_path));
+}
+
+JNIEXPORT jboolean JNICALL
+Java_org_dolphinemu_dolphinemu_features_input_model_DefaultProfileManager_setDefaultProfileNative(
+    JNIEnv* env, jobject, jstring j_profile_path, jboolean enabled, jint family)
+{
+  return InputProfile::SetDefaultProfile(GetDefaultProfileInputConfig(family),
+                                         GetJString(env, j_profile_path), enabled);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_org_dolphinemu_dolphinemu_features_input_model_DefaultProfileManager_hasDefaultProfileForDeviceNative(
+    JNIEnv* env, jobject, jstring j_device, jstring j_excluded_profile_path, jint family)
+{
+  return InputProfile::HasDefaultProfileForDevice(
+      GetDefaultProfileInputConfig(family), GetJString(env, j_device),
+      GetJString(env, j_excluded_profile_path));
+}
+
+JNIEXPORT void JNICALL
+Java_org_dolphinemu_dolphinemu_features_input_model_DefaultProfileManager_applyDefaultProfilesNative(
+    JNIEnv*, jobject, jint family)
+{
+  InputProfile::ApplyDefaultProfiles(GetDefaultProfileInputConfig(family));
+}
+
+JNIEXPORT jboolean JNICALL
+Java_org_dolphinemu_dolphinemu_features_input_model_DefaultProfileManager_applyDefaultProfileToControllerNative(
+    JNIEnv* env, jobject, jobject controller_object, jstring j_device, jint family)
+{
+  auto* controller = EmulatedControllerFromJava(env, controller_object);
+  return InputProfile::ApplyDefaultProfile(GetDefaultProfileInputConfig(family), controller,
+                                           GetJString(env, j_device));
+}
 
 JNIEXPORT jstring JNICALL
 Java_org_dolphinemu_dolphinemu_features_input_model_controlleremu_EmulatedController_getDefaultDevice(
@@ -111,7 +190,6 @@ Java_org_dolphinemu_dolphinemu_features_input_model_controlleremu_EmulatedContro
 {
   ControllerEmu::EmulatedController* controller = EmulatedControllerFromJava(env, obj);
 
-  // Loading an empty IniFile section clears everything.
   Common::IniFile::Section section;
 
   controller->LoadConfig(&section);
@@ -119,18 +197,20 @@ Java_org_dolphinemu_dolphinemu_features_input_model_controlleremu_EmulatedContro
   controller->GetConfig()->GenerateControllerTextures();
 }
 
+JNIEXPORT jboolean JNICALL
+Java_org_dolphinemu_dolphinemu_features_input_model_controlleremu_EmulatedController_hasMappings(
+    JNIEnv* env, jobject obj)
+{
+  return InputProfile::HasControllerMappings(EmulatedControllerFromJava(env, obj));
+}
+
 JNIEXPORT void JNICALL
 Java_org_dolphinemu_dolphinemu_features_input_model_controlleremu_EmulatedController_loadProfile(
-    JNIEnv* env, jobject obj, jstring j_path)
+    JNIEnv* env, jobject obj, jstring j_path, jboolean replace_existing)
 {
-  ControllerEmu::EmulatedController* controller = EmulatedControllerFromJava(env, obj);
-
-  Common::IniFile ini;
-  ini.Load(GetJString(env, j_path));
-
-  controller->LoadConfig(ini.GetOrCreateSection("Profile"));
-  controller->UpdateReferences(g_controller_interface);
-  controller->GetConfig()->GenerateControllerTextures();
+  auto* controller = EmulatedControllerFromJava(env, obj);
+  InputProfile::LoadProfile(controller, controller->GetConfig(), GetJString(env, j_path),
+                            replace_existing);
 }
 
 JNIEXPORT void JNICALL
@@ -143,8 +223,12 @@ Java_org_dolphinemu_dolphinemu_features_input_model_controlleremu_EmulatedContro
 
   Common::IniFile ini;
 
-  EmulatedControllerFromJava(env, obj)->SaveConfig(ini.GetOrCreateSection("Profile"));
+  auto* controller = EmulatedControllerFromJava(env, obj);
+  controller->SaveConfig(ini.GetOrCreateSection("Profile"));
   ini.Save(path);
+
+  if (InputProfile::IsDefaultProfile(path))
+    InputProfile::SetDefaultProfile(controller->GetConfig(), path, true);
 }
 
 JNIEXPORT jstring JNICALL

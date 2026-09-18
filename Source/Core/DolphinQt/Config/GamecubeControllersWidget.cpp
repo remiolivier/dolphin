@@ -15,10 +15,12 @@
 
 #include "Core/ConfigManager.h"
 #include "Core/Core.h"
+#include "Core/HW/GCPad.h"
 #include "Core/HW/SI/SI_Device.h"
 #include "Core/NetPlayProto.h"
 #include "Core/System.h"
 
+#include "DolphinQt/Config/DefaultProfileDialog.h"
 #include "DolphinQt/Config/Mapping/GCPadWiiUConfigDialog.h"
 #include "DolphinQt/Config/Mapping/MappingWindow.h"
 #include "DolphinQt/QtUtils/NonDefaultQPushButton.h"
@@ -92,6 +94,8 @@ void GamecubeControllersWidget::CreateLayout()
     m_gc_layout->addWidget(gc_box, controller_row, 1);
     m_gc_layout->addWidget(gc_button, controller_row, 2);
   }
+  m_default_profiles_button = new NonDefaultQPushButton(tr("Default Profiles"));
+  m_gc_layout->addWidget(m_default_profiles_button, m_gc_layout->rowCount(), 2);
   m_gc_box->setLayout(m_gc_layout);
 
   auto* layout = new QVBoxLayout;
@@ -103,6 +107,10 @@ void GamecubeControllersWidget::CreateLayout()
 
 void GamecubeControllersWidget::ConnectWidgets()
 {
+  connect(m_default_profiles_button, &QPushButton::clicked, this, [this] {
+    DefaultProfileDialog dialog(Pad::GetConfig(), this);
+    dialog.exec();
+  });
   for (size_t i = 0; i < m_gc_controller_boxes.size(); ++i)
   {
     connect(m_gc_controller_boxes[i], &QComboBox::currentIndexChanged, this, [this, i] {

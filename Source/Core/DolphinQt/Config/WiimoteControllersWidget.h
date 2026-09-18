@@ -73,6 +73,7 @@ private:
   QPushButton* m_bluetooth_adapters_refresh;
   QPushButton* m_wiimote_sync;
   QPushButton* m_wiimote_reset;
+  QPushButton* m_default_profiles_button;
   QCheckBox* m_wiimote_continuous_scanning;
   QCheckBox* m_wiimote_real_balance_board;
   QCheckBox* m_wiimote_speaker_data;
